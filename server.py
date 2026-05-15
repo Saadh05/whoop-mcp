@@ -167,16 +167,25 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
 def _summarize_recovery(records: list) -> str:
     if not records:
         return "No recovery data found."
-    scores = [r["score"]["recovery_score"] for r in records if r.get("score")]
-    hrvs = [r["score"]["hrv_rmssd_milli"] for r in records if r.get("score")]
-    rhrs = [r["score"]["resting_heart_rate"] for r in records if r.get("score")]
-    lines = [f"Recovery summary ({len(records)} days):"]
+    scores, hrvs, rhrs = [], [], []
+    for r in records:
+        s = r.get("score") or {}
+        if s.get("recovery_score") is not None:
+            scores.append(s["recovery_score"])
+        if s.get("hrv_rmssd_milli") is not None:
+            hrvs.append(s["hrv_rmssd_milli"])
+        if s.get("resting_heart_rate") is not None:
+            rhrs.append(s["resting_heart_rate"])
+    lines = [f"Recovery summary ({len(records)} records):"]
     if scores:
+        lines.append(f"  Latest recovery score: {scores[-1]:.0f}%")
         lines.append(f"  Avg recovery score: {sum(scores)/len(scores):.1f}%  (min {min(scores):.0f}%, max {max(scores):.0f}%)")
     if hrvs:
         lines.append(f"  Avg HRV (RMSSD): {sum(hrvs)/len(hrvs):.1f} ms")
     if rhrs:
         lines.append(f"  Avg resting HR: {sum(rhrs)/len(rhrs):.1f} bpm")
+    if not scores and not hrvs and not rhrs:
+        lines.append("  No scored records found yet.")
     return "\n".join(lines)
 
 

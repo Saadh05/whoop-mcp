@@ -1,6 +1,14 @@
 # whoop-mcp
 
-A Model Context Protocol (MCP) server that connects your Whoop fitness data to Claude. Ask natural language questions about your recovery, sleep, workouts, and more.
+A Model Context Protocol (MCP) server that connects your Whoop fitness data to Claude. Ask natural language questions about your recovery, sleep, workouts, and more — directly in Claude chat.
+
+## What You Can Ask
+
+- *"What was my recovery score today?"*
+- *"How did I sleep this week?"*
+- *"Show me my HRV trend over the last 30 days"*
+- *"Which workouts had the highest strain?"*
+- *"Compare my sleep efficiency this month"*
 
 ## Available Tools
 
@@ -8,58 +16,72 @@ A Model Context Protocol (MCP) server that connects your Whoop fitness data to C
 |---|---|
 | `get_profile` | Your name and email |
 | `get_body_measurement` | Height, weight, max heart rate |
-| `get_recovery` | Recovery %, HRV, resting heart rate |
-| `get_sleep` | Duration, efficiency, sleep stages |
+| `get_recovery` | Recovery %, HRV, resting heart rate, SpO2 |
+| `get_sleep` | Duration, efficiency, sleep stages, disturbances |
 | `get_workouts` | Strain, calories, sport type |
 | `get_cycles` | Daily strain and total calories burned |
 
-All data tools accept optional `start` and `end` parameters (ISO 8601 format) and default to the last 30 days.
+All data tools accept optional `start` and `end` date parameters and default to the last 30 days.
+
+---
 
 ## Setup
 
 ### 1. Prerequisites
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) (Python package manager):
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-### 2. Install dependencies
+Clone this repo to a path **without spaces**:
 
 ```bash
-cd whoop-mcp
+git clone https://github.com/your-username/whoop-mcp.git ~/whoop-mcp
+cd ~/whoop-mcp
+```
+
+Install dependencies:
+
+```bash
 uv venv --python 3.12
 uv pip install mcp httpx
 ```
 
-### 3. Get Whoop API credentials
+### 2. Get Whoop API credentials
 
 1. Go to [https://developer.whoop.com/](https://developer.whoop.com/)
-2. Create a new app and fill in the required fields:
-   - **Privacy Policy URL** — host `privacy.html` on GitHub Pages (see below) and paste that URL
-   - **Webhook URL** — optional; set to `http://your-host:8080/webhook` if running `webhook_server.py`
-   - **Redirect URI** — `http://localhost:8888/callback`
+2. Create a new app and fill in:
+   - **Redirect URI**: `http://localhost:8888/callback`
+   - **Privacy Policy URL**: your GitHub Pages URL (see [Privacy Policy](#privacy-policy) below)
 3. Copy your **Client ID** and **Client Secret**
 
-### 4. Authenticate (one time)
+### 3. Authenticate (one time only)
 
 ```bash
-WHOOP_CLIENT_ID=your_id WHOOP_CLIENT_SECRET=your_secret .venv/bin/python auth.py
+WHOOP_CLIENT_ID=your_client_id \
+WHOOP_CLIENT_SECRET=your_client_secret \
+.venv/bin/python auth.py
 ```
 
-This opens a browser, you approve access, and tokens are saved to `~/.whoop_tokens.json`.
+This opens the Whoop authorization page in your browser. After you approve:
+- Your browser will show an error on `localhost:8888` — that's expected
+- Copy the full URL from the address bar and paste it into the terminal
+- Tokens are saved to `~/.whoop_tokens.json`
 
-### 5. Add to Claude Code
+You will **not** need to do this again. The server automatically refreshes your token.
 
-Add this to your `~/.claude.json` under `mcpServers`:
+### 4. Configure the Claude Desktop App
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json` and add:
 
 ```json
 {
   "mcpServers": {
     "whoop": {
-      "command": "/absolute/path/to/whoop-mcp/.venv/bin/python",
-      "args": ["/absolute/path/to/whoop-mcp/server.py"],
+      "command": "/Users/your-username/whoop-mcp/.venv/bin/python",
+      "args": ["/Users/your-username/whoop-mcp/server.py"],
       "env": {
         "WHOOP_CLIENT_ID": "your_client_id",
         "WHOOP_CLIENT_SECRET": "your_client_secret"
@@ -69,15 +91,13 @@ Add this to your `~/.claude.json` under `mcpServers`:
 }
 ```
 
-Restart Claude Code and the server will load automatically.
+> **Important:** The path to `whoop-mcp` must not contain spaces — this is why step 1 clones to `~/whoop-mcp`.
 
-## Example Questions
+### 5. Restart Claude
 
-- "What was my average HRV last week?"
-- "How many hours of sleep did I average this month?"
-- "Show me my recovery trend over the past 30 days"
-- "Which workouts had the highest strain scores?"
-- "Compare my sleep efficiency between weekdays and weekends"
+Fully quit Claude (Cmd+Q) and reopen it. The Whoop server should show as connected under **Settings → Developer**.
+
+---
 
 ## Privacy Policy
 
@@ -85,34 +105,47 @@ Restart Claude Code and the server will load automatically.
 
 **Host it on GitHub Pages:**
 1. Push this repo to GitHub
-2. Go to **Settings → Pages → Source → main branch**
-3. Your privacy policy URL will be: `https://your-username.github.io/whoop-mcp/privacy.html`
+2. Go to **Settings → Pages → Source → Deploy from a branch → main / root**
+3. Your privacy policy URL will be:
+   ```
+   https://your-username.github.io/whoop-mcp/privacy.html
+   ```
+
+---
 
 ## Webhooks (optional)
 
-`webhook_server.py` receives real-time events from Whoop (new workout, sleep, recovery, body measurement).
+`webhook_server.py` receives real-time events from Whoop when new data is recorded.
 
 ```bash
-WHOOP_CLIENT_SECRET=your_secret .venv/bin/python webhook_server.py
+WHOOP_CLIENT_SECRET=your_client_secret .venv/bin/python webhook_server.py
 ```
 
 For local development, expose it with [ngrok](https://ngrok.com/):
 
 ```bash
 ngrok http 8080
-# Then register https://xxxx.ngrok-free.app/webhook in the Whoop developer portal
+# Register the https URL in the Whoop developer portal
 ```
 
 Supported events: `workout.updated`, `sleep.updated`, `recovery.updated`, `body_measurement.updated`
+
+---
 
 ## Project Structure
 
 ```
 whoop-mcp/
 ├── server.py            # MCP server — tools Claude calls
-├── whoop_client.py      # Whoop API client with token refresh
+├── whoop_client.py      # Whoop API v2 client with auto token refresh
 ├── auth.py              # One-time OAuth setup script
-├── webhook_server.py    # Real-time Whoop event receiver
-├── privacy.html         # Privacy policy (host on GitHub Pages)
-└── requirements.txt     # Python dependencies
+├── webhook_server.py    # Real-time Whoop event receiver (optional)
+├── privacy.html         # Privacy policy page for GitHub Pages
+└── requirements.txt     # Python dependencies (mcp, httpx)
 ```
+
+## Notes
+
+- Tokens are stored at `~/.whoop_tokens.json` and auto-refreshed — you never need to re-run `auth.py` unless you revoke access from the Whoop app
+- Uses the Whoop API v2
+- Tested on macOS with Python 3.12

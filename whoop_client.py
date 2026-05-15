@@ -1,13 +1,26 @@
 import json
 import os
-import time
 from pathlib import Path
 from typing import Any
 import httpx
 
-API_BASE = "https://api.prod.whoop.com/developer/v1"
+API_BASE = "https://api.prod.whoop.com/developer/v2"
 TOKEN_URL = "https://api.prod.whoop.com/oauth/oauth2/token"
 TOKEN_FILE = Path.home() / ".whoop_tokens.json"
+
+
+def _normalize_dt(dt: str) -> str:
+    """Ensure a date/datetime string is full RFC 3339 format Whoop requires.
+    '2026-05-10' -> '2026-05-10T00:00:00.000Z'
+    Already-full strings are passed through unchanged.
+    """
+    if not dt:
+        return dt
+    if "T" not in dt:
+        return f"{dt}T00:00:00.000Z"
+    if not dt.endswith("Z") and "+" not in dt:
+        return f"{dt}Z"
+    return dt
 
 
 class WhoopClient:
@@ -81,34 +94,24 @@ class WhoopClient:
     def get_body_measurement(self) -> dict:
         return self._get("/user/measurement/body")
 
-    def get_cycles(self, start: str | None = None, end: str | None = None) -> list:
+    def _date_params(self, start: str | None, end: str | None) -> dict:
         params = {}
         if start:
-            params["start"] = start
+            params["start"] = _normalize_dt(start)
         if end:
-            params["end"] = end
-        return self._paginate("/cycle", params)
+            params["end"] = _normalize_dt(end)
+        return params
+
+    def get_cycles(self, start: str | None = None, end: str | None = None) -> list:
+        """Fetch physiological cycles (includes recovery score embedded)."""
+        return self._paginate("/cycle", self._date_params(start, end))
 
     def get_recovery(self, start: str | None = None, end: str | None = None) -> list:
-        params = {}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
-        return self._paginate("/recovery", params)
+        """Fetch recovery records from the dedicated /recovery list endpoint."""
+        return self._paginate("/recovery", self._date_params(start, end))
 
     def get_sleep(self, start: str | None = None, end: str | None = None) -> list:
-        params = {}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
-        return self._paginate("/activity/sleep", params)
+        return self._paginate("/activity/sleep", self._date_params(start, end))
 
     def get_workouts(self, start: str | None = None, end: str | None = None) -> list:
-        params = {}
-        if start:
-            params["start"] = start
-        if end:
-            params["end"] = end
-        return self._paginate("/activity/workout", params)
+        return self._paginate("/activity/workout", self._date_params(start, end))
